@@ -1,0 +1,80 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # 2. Setup Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "stable"
+
+      # 3. Setup Java (for Android)
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 4. Setup Rust
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      # 5. Flutter dependencies
+      - name: Run flutter pub get
+        run: flutter pub get
+
+      # 6. Build Rust FFI part
+      - name: Build Rust FFI
+        run: |
+          cd rust_lib
+          cargo build --release
+          cd ..
+
+      # 7. 自动生成时间版本号（例如 v20250118-2359）
+      - name: Generate version tag
+        id: version
+        run: |
+          TAG="v$(date +'%Y%m%d-%H%M')"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # 8. Build Android APK
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      # 9. 上传 APK 作为构建产物
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      # 10. 发布 Release 并上传 APK
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Android Release ${{ steps.version.outputs.tag }}"
+          draft: false
+          prerelease: false
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
